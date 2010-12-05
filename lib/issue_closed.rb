@@ -80,6 +80,31 @@ module IssueClosed
             
           end
         end
+
+        alias_method :_bulk_update_redmine_x_closed, :bulk_update unless method_defined? :_bulk_update_redmine_x_closed
+        def bulk_update
+          _bulk_update_redmine_x_closed
+
+          if request.post?
+            @issues.each do |issue|
+              if not (issue.project.enabled_modules.detect { |enabled_module| enabled_module.name == 'issue_closed' }) == nil
+                to_destroy_id = issue.delayed_job_id
+                delayed_job_id = nil
+
+                if issue.status.state == false
+                  job = Delayed::Job.enqueue DelayedClose.new(issue.id), 0, 7.days.from_now
+                  delayed_job_id = job.id
+                end
+
+                issue.delayed_job_id = delayed_job_id
+                issue.send :update_without_callbacks
+
+                Delayed::Job.destroy to_destroy_id unless to_destroy_id == nil
+              end
+            end
+          end
+        end
+
       end
     end    
   end
